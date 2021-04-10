@@ -1,0 +1,8 @@
+sensor_time_steps {
+  name: "NeckS"
+  timeStep: 8
+}
+sensor_time_steps {
+  name: "Camera"
+  timeStep: 16
+}

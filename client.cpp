@@ -42,6 +42,11 @@ static void close_socket(int fd) {
 #endif
 }
 
+static void socket_closed_exit() {
+  printf("Connection closed by server.\n");
+  exit(1);
+}
+
 static char *read_file(const char *filename) {
   char *buffer = NULL;
   FILE *fp = fopen(filename, "r");
@@ -59,10 +64,34 @@ static char *read_file(const char *filename) {
   return buffer;
 }
 
-static void socket_closed_exit() {
-  printf("Connection closed by server.\n");
-  exit(1);
+static void send_file(int fd, const char *filename) {
+  const char *message = read_file(filename);
+  printf("Message = %s\n", message);
+  ActuatorRequests actuatorRequests;
+  google::protobuf::TextFormat::ParseFromString(message, &actuatorRequests);
+#ifndef _WIN32
+  // This doesn't work on Windows, we should implement SocketOutputStream to make it work efficiently on Windows
+  // See https://stackoverflow.com/questions/23280457/c-google-protocol-buffers-open-http-socket
+  const int size = htonl(actuatorRequests.ByteSizeLong());
+  if (send(fd, (char *)(&size), sizeof(int), 0) == -1)
+    socket_closed_exit();
+  google::protobuf::io::ZeroCopyOutputStream *zeroCopyStream = new google::protobuf::io::FileOutputStream(fd);
+  actuatorRequests.SerializeToZeroCopyStream(zeroCopyStream);
+  delete zeroCopyStream;
+#else  // here we make a useless malloc, copy and free
+  const int size = actuatorRequests.ByteSizeLong();
+  char *output = (char *)malloc(sizeof(int) + size);
+  int *output_size = (int *)output;
+  *output_size = htonl(size);
+  actuatorRequests.SerializeToArray(&output[sizeof(int)], size);
+  if (send(fd, output, sizeof(int) + size, 0) == -1) {
+    free(output);
+    socket_closed_exit();
+  }
+  free(output);
+#endif
 }
+
 
 int main(int argc, char *argv[]) {
   struct sockaddr_in address;
@@ -137,33 +166,14 @@ int main(int argc, char *argv[]) {
     return 1;
   }
   printf("Connected to %s:%d\n", host, port);
+  bool initialized = false;
   for (;;) {
-    const char *message = read_file("actuator_requests.txt");
-    printf("Message = %s\n", message);
-
-    ActuatorRequests actuatorRequests;
-    google::protobuf::TextFormat::ParseFromString(message, &actuatorRequests);
-#ifndef _WIN32
-    // This doesn't work on Windows, we should implement SocketOutputStream to make it work efficiently on Windows
-    // See https://stackoverflow.com/questions/23280457/c-google-protocol-buffers-open-http-socket
-    const int size = htonl(actuatorRequests.ByteSizeLong());
-    if (send(fd, (char *)(&size), sizeof(int), 0) == -1)
-      socket_closed_exit();
-    google::protobuf::io::ZeroCopyOutputStream *zeroCopyStream = new google::protobuf::io::FileOutputStream(fd);
-    actuatorRequests.SerializeToZeroCopyStream(zeroCopyStream);
-    delete zeroCopyStream;
-#else  // here we make a useless malloc, copy and free
-    const int size = actuatorRequests.ByteSizeLong();
-    char *output = (char *)malloc(sizeof(int) + size);
-    int *output_size = (int *)output;
-    *output_size = htonl(size);
-    actuatorRequests.SerializeToArray(&output[sizeof(int)], size);
-    if (send(fd, output, sizeof(int) + size, 0) == -1) {
-      free(output);
-      socket_closed_exit();
+    if (!initialized) {
+      send_file(fd, "time_step_requests.txt");
+      initialized = true;
+    } else {
+      send_file(fd, "actuator_requests.txt");
     }
-    free(output);
-#endif
     int s;
     if (recv(fd, (char *)&s, sizeof(int), 0) == -1)
       socket_closed_exit();
