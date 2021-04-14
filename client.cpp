@@ -15,6 +15,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <iostream>
+#include <chrono>
+#include <cmath>
+#include <deque>
 
 #ifdef _WIN32
 #include <winsock.h>
@@ -33,6 +36,8 @@
 #if GOOGLE_PROTOBUF_VERSION < 3006001
 #define ByteSizeLong ByteSize
 #endif
+
+#define PACKETS_MEMORY_SIZE 125
 
 static void close_socket(int fd) {
 #ifdef _WIN32
@@ -66,7 +71,7 @@ static char *read_file(const char *filename) {
 
 static void send_file(int fd, const char *filename) {
   const char *message = read_file(filename);
-  printf("Message = %s\n", message);
+  // printf("Message = %s\n", message);
   ActuatorRequests actuatorRequests;
   google::protobuf::TextFormat::ParseFromString(message, &actuatorRequests);
 #ifndef _WIN32
@@ -100,6 +105,9 @@ int main(int argc, char *argv[]) {
   char *buffer;
   int port = 10003;
   char host[256];  // localhost
+
+  std::deque<uint64_t> msg_sizes;
+  std::deque<std::chrono::time_point<std::chrono::system_clock>> msg_arrivals;
 
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
@@ -178,6 +186,21 @@ int main(int argc, char *argv[]) {
     if (recv(fd, (char *)&s, sizeof(int), 0) == -1)
       socket_closed_exit();
     const int answer_size = ntohl(s);
+    printf("Msg size: %d\n",answer_size);
+    msg_sizes.push_back(answer_size);
+    msg_arrivals.push_back(std::chrono::system_clock::now());
+    if (msg_sizes.size() > PACKETS_MEMORY_SIZE) {
+      msg_sizes.pop_front();
+      msg_arrivals.pop_front();
+      uint64_t total_size = 0;
+      for (auto s : msg_sizes) {
+        total_size += s;
+      }
+      std::chrono::duration<double> duration_sec = msg_arrivals.back() - msg_arrivals.front();
+      double avg_bandwidth_bytes = total_size / duration_sec.count();
+      double avg_bandwidth_mb = avg_bandwidth_bytes / std::pow(2,20);
+      printf("Avg bandwidth: %lf MB/s\n", avg_bandwidth_mb);
+    }
     SensorMeasurements sensorMeasurements;
     if (answer_size) {
       buffer = (char *)malloc(answer_size);
@@ -191,9 +214,9 @@ int main(int argc, char *argv[]) {
       sensorMeasurements.ParseFromArray(buffer, answer_size);
       free(buffer);
     }
-    std::string printout;
-    google::protobuf::TextFormat::PrintToString(sensorMeasurements, &printout);
-    std::cout << printout << std::endl;
+    // std::string printout;
+    // google::protobuf::TextFormat::PrintToString(sensorMeasurements, &printout);
+    // std::cout << printout << std::endl;
   }
   close_socket(fd);
   printf("Connection closed.\n");
