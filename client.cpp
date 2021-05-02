@@ -70,10 +70,11 @@ static char *read_file(const char *filename) {
 }
 
 static void send_file(int fd, const char *filename) {
-  const char *message = read_file(filename);
+  char *message = read_file(filename);
   // printf("Message = %s\n", message);
   ActuatorRequests actuatorRequests;
   google::protobuf::TextFormat::ParseFromString(message, &actuatorRequests);
+  free(message);
 #ifndef _WIN32
   // This doesn't work on Windows, we should implement SocketOutputStream to make it work efficiently on Windows
   // See https://stackoverflow.com/questions/23280457/c-google-protocol-buffers-open-http-socket
@@ -182,8 +183,9 @@ int main(int argc, char *argv[]) {
     } else {
       send_file(fd, "actuator_requests.txt");
     }
-    int s;
-    if (recv(fd, (char *)&s, sizeof(int), 0) == -1)
+    uint32_t s;
+    int n = recv(fd, (char *)&s, sizeof(uint32_t), 0);
+    if (n == -1)
       socket_closed_exit();
     const int answer_size = ntohl(s);
     printf("Msg size: %d\n",answer_size);
@@ -206,7 +208,7 @@ int main(int argc, char *argv[]) {
       buffer = (char *)malloc(answer_size);
       int i = 0;
       while (i < answer_size) {
-        n = recv(fd, &buffer[i], answer_size, 0);
+        n = recv(fd, buffer+i, answer_size - i, 0);
         if (n == -1)
           socket_closed_exit();
         i += n;

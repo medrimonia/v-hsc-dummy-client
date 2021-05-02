@@ -3,7 +3,7 @@ CXX_SOURCES = client.cpp messages.pb.cpp
 
 
 client: client.cpp messages.pb.o
-	$(CXX) $^ -o $@ $(LIBS)
+	$(CXX) $^ -Wall -Wextra -g -o $@ $(LIBS)
 
 messages.pb.o: messages.pb.cpp
 	$(CXX) -c $< -o $@
