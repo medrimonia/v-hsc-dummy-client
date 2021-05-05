@@ -1,9 +1,10 @@
-LIBS = -lprotobuf -lpthread
+LIBS = -lprotobuf -lpthread `pkg-config --libs opencv4`
 CXX_SOURCES = client.cpp messages.pb.cpp
+CXX_FLAGS = `pkg-config --cflags opencv4`
 
 
 client: client.cpp messages.pb.o
-	$(CXX) $^ -Wall -Wextra -g -o $@ $(LIBS)
+	$(CXX) $(CXX_FLAGS) $^ -Wall -Wextra -g -o $@ $(LIBS)
 
 messages.pb.o: messages.pb.cpp
 	$(CXX) -c $< -o $@

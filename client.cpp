@@ -37,6 +37,11 @@
 #define ByteSizeLong ByteSize
 #endif
 
+#include <stdexcept>
+#include <sstream>
+
+#include <opencv2/highgui.hpp>
+
 #define PACKETS_MEMORY_SIZE 125
 
 static void close_socket(int fd) {
@@ -176,10 +181,11 @@ int main(int argc, char *argv[]) {
   }
   printf("Connected to %s:%d\n", host, port);
   bool initialized = false;
-  for (;;) {
+  int step_idx = 0;
+  while(true) {
     if (!initialized) {
       send_file(fd, "time_step_requests.txt");
-      initialized = true;
+      // initialized = true;
     } else {
       send_file(fd, "actuator_requests.txt");
     }
@@ -216,9 +222,17 @@ int main(int argc, char *argv[]) {
       sensorMeasurements.ParseFromArray(buffer, answer_size);
       free(buffer);
     }
-    // std::string printout;
-    // google::protobuf::TextFormat::PrintToString(sensorMeasurements, &printout);
-    // std::cout << printout << std::endl;
+    for (int i=0; i < sensorMeasurements.cameras_size(); i++) {
+      const CameraMeasurement &sensor_data  = sensorMeasurements.cameras(i);
+      char name_buffer[100];
+      sprintf(name_buffer, "img_%d_step_%05d_ts_%06d.jpg", i, step_idx, sensorMeasurements.time());
+      if (sensor_data.quality() != -1) {
+        throw std::runtime_error("Encoded images are not supported in this client");
+      }
+      cv::Mat img(sensor_data.height(),sensor_data.width(), CV_8UC3, (void*)sensor_data.image().c_str());
+      cv::imwrite(name_buffer, img);
+    }
+    step_idx++;
   }
   close_socket(fd);
   printf("Connection closed.\n");
